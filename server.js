@@ -323,7 +323,20 @@ app.post("/api/chat/stream", async (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection",    "keep-alive");
 
-    const chosenModel = (model || MODEL_SONNET).trim();
+    const normalizeModel = (m) => {
+  if (!m) return MODEL_SONNET;
+
+  const s = String(m).trim();
+
+  // Normaliza variações com sufixo tipo "-20251001"
+  if (s.startsWith("claude-sonnet-4-5")) return MODEL_SONNET;
+  if (s.startsWith("claude-haiku-4-5")) return MODEL_HAIKU;
+
+  // Se vier qualquer outra coisa, cai no padrão
+  return MODEL_SONNET;
+};
+
+const chosenModel = normalizeModel(model);
     console.log("Chamando Anthropic com modelo:", chosenModel);
 
     const controller  = new AbortController();
