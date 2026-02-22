@@ -11,6 +11,13 @@ const API_KEY       = process.env.ANTHROPIC_API_KEY;
 const PORT          = process.env.PORT ? Number(process.env.PORT) : 3000;
 const CHAT_PASSWORD = process.env.CHAT_PASSWORD || "";
 
+// 🔍 LOG INICIAL - mostra se as variáveis estão carregadas
+console.log("=== INICIANDO SERVIDOR ===");
+console.log("API_KEY definida:", !!API_KEY, "| primeiros chars:", API_KEY ? API_KEY.slice(0,12) : "VAZIA");
+console.log("SUPABASE_URL definida:", !!process.env.SUPABASE_URL);
+console.log("SUPABASE_KEY definida:", !!process.env.SUPABASE_KEY);
+console.log("CHAT_PASSWORD definida:", !!CHAT_PASSWORD);
+
 // ✅ Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -70,12 +77,16 @@ app.post("/api/settings", async (req, res) => {
 
 // ---- Conversas ----
 app.get("/api/conversations", async (req, res) => {
+  console.log("[GET /api/conversations]");
   const { data, error } = await supabase
     .from("conversations")
     .select("id, title, updated_at")
     .order("updated_at", { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.log("ERRO SUPABASE conversations:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
 
   res.json({
     conversations: (data || []).map((c) => ({
@@ -87,6 +98,7 @@ app.get("/api/conversations", async (req, res) => {
 });
 
 app.post("/api/conversations", async (req, res) => {
+  console.log("[POST /api/conversations]");
   const id  = uid();
   const now = Date.now();
   const { error } = await supabase.from("conversations").insert({
@@ -97,12 +109,17 @@ app.post("/api/conversations", async (req, res) => {
     created_at:         now,
     updated_at:         now,
   });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.log("ERRO SUPABASE insert conversation:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  console.log("Conversa criada:", id);
   res.json({ id });
 });
 
 app.get("/api/conversations/:id", async (req, res) => {
   const { id } = req.params;
+  console.log("[GET /api/conversations/" + id + "]");
 
   const { data: conv, error: convErr } = await supabase
     .from("conversations")
@@ -110,7 +127,10 @@ app.get("/api/conversations/:id", async (req, res) => {
     .eq("id", id)
     .single();
 
-  if (convErr || !conv) return res.status(404).json({ error: "Conversa não encontrada" });
+  if (convErr || !conv) {
+    console.log("ERRO SUPABASE get conversation:", convErr?.message);
+    return res.status(404).json({ error: "Conversa não encontrada" });
+  }
 
   const { data: msgs } = await supabase
     .from("messages")
@@ -184,7 +204,6 @@ async function maybeSummarizeConversation(conversationId) {
   const summary = pickTextFromAnthropic(data).trim();
   if (!summary) return;
 
-  // Deleta mensagens antigas, mantém só as últimas
   const oldTs = msgs.slice(0, msgs.length - keepLast).map(m => m.ts);
   if (oldTs.length) {
     await supabase
@@ -203,11 +222,16 @@ async function maybeSummarizeConversation(conversationId) {
 // ---- Chat streaming ----
 app.post("/api/chat/stream", async (req, res) => {
   try {
-    if (!API_KEY)
+    console.log("[POST /api/chat/stream] recebido");
+
+    if (!API_KEY) {
+      console.log("ERRO: API_KEY não definida");
       return res.status(500).json({ error: "ANTHROPIC_API_KEY não definida." });
+    }
 
     const { conversationId, message, model, attachments } = req.body || {};
     const userText = (message || "").trim();
+    console.log("conversationId:", conversationId, "| message:", userText.slice(0, 30));
 
     if (!conversationId)
       return res.status(400).json({ error: "conversationId obrigatório." });
@@ -216,24 +240,31 @@ app.post("/api/chat/stream", async (req, res) => {
     if (!userText && !hasAttachments)
       return res.status(400).json({ error: "Mensagem vazia." });
 
-    const { data: conv } = await supabase
+    console.log("Buscando conversa no Supabase...");
+    const { data: conv, error: convError } = await supabase
       .from("conversations")
       .select("*")
       .eq("id", conversationId)
       .single();
-    if (!conv) return res.status(404).json({ error: "Conversa não encontrada." });
+
+    if (convError) console.log("ERRO SUPABASE buscar conv:", convError.message);
+    if (!conv) {
+      console.log("Conversa não encontrada:", conversationId);
+      return res.status(404).json({ error: "Conversa não encontrada." });
+    }
+    console.log("Conversa encontrada OK");
 
     const now = Date.now();
 
-    // Salva mensagem do usuário
-    await supabase.from("messages").insert({
+    const { error: insertErr } = await supabase.from("messages").insert({
       conversation_id: conversationId,
       role:            "user",
       content:         userText || "[Anexo enviado]",
       ts:              now,
     });
+    if (insertErr) console.log("ERRO SUPABASE insert message:", insertErr.message);
+    else console.log("Mensagem do usuário salva OK");
 
-    // Atualiza título se for nova conversa
     const newTitle = (!conv.title || conv.title === "Nova conversa")
       ? (userText || "Nova conversa").slice(0, 48)
       : conv.title;
@@ -245,7 +276,6 @@ app.post("/api/chat/stream", async (req, res) => {
 
     await maybeSummarizeConversation(conversationId);
 
-    // Recarrega conversa e mensagens
     const { data: conv2 } = await supabase
       .from("conversations")
       .select("*")
@@ -258,20 +288,19 @@ app.post("/api/chat/stream", async (req, res) => {
       .eq("conversation_id", conversationId)
       .order("ts", { ascending: true });
 
-    // System prompt: resumo + prompt personalizado
+    console.log("Total de mensagens no histórico:", msgs?.length || 0);
+
     const userSystemPrompt = await getSetting("system_prompt");
     let system = "";
     if (conv2?.summary) system += `Contexto resumido desta conversa:\n${conv2.summary}\n\n`;
     if (userSystemPrompt) system += userSystemPrompt;
 
-    // Histórico
     const MAX_TURNS = 20;
     const history = (msgs || []).slice(-MAX_TURNS).map((m) => ({
       role:    m.role,
       content: m.content,
     }));
 
-    // Blocos multimodal
     const blocks = [];
     if (userText) blocks.push({ type: "text", text: userText });
 
@@ -290,12 +319,13 @@ app.post("/api/chat/stream", async (req, res) => {
 
     history.push({ role: "user", content: blocks.length ? blocks : userText });
 
-    // SSE
     res.setHeader("Content-Type",  "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection",    "keep-alive");
 
     const chosenModel = (model || MODEL_SONNET).trim();
+    console.log("Chamando Anthropic com modelo:", chosenModel);
+
     const controller  = new AbortController();
     req.on("close", () => controller.abort());
 
@@ -316,12 +346,16 @@ app.post("/api/chat/stream", async (req, res) => {
       }),
     });
 
-   if (!r.ok) {
-  const errText = await r.text();
-  console.log("ERRO ANTHROPIC DETALHADO:", errText);
-  res.write(`event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`);
-  return res.end();
-}
+    console.log("Anthropic status:", r.status);
+
+    if (!r.ok) {
+      const errText = await r.text();
+      console.log("ERRO ANTHROPIC DETALHADO:", errText);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`);
+      return res.end();
+    }
+
+    console.log("Anthropic OK, iniciando stream...");
 
     let assistantText = "";
     const reader  = r.body.getReader();
@@ -358,7 +392,8 @@ app.post("/api/chat/stream", async (req, res) => {
       }
     }
 
-    // Salva resposta do assistant
+    console.log("Stream finalizado, salvando resposta...");
+
     await supabase.from("messages").insert({
       conversation_id: conversationId,
       role:            "assistant",
@@ -372,6 +407,8 @@ app.post("/api/chat/stream", async (req, res) => {
       .eq("id", conversationId);
 
     res.end();
+    console.log("Resposta finalizada com sucesso");
+
   } catch (err) {
     if (String(err).includes("AbortError")) return;
     console.log("ERRO SERVIDOR:", err);
