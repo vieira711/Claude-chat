@@ -13,32 +13,42 @@ app.use(express.json({ limit: "25mb" }));
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// (Opcional) Proteção por senha
-// No Render: setar CHAT_PASSWORD nas env vars
+// Proteção por senha (configure CHAT_PASSWORD no Render)
 const CHAT_PASSWORD = process.env.CHAT_PASSWORD || "";
 
-// Modelos (da sua conta)
-const MODEL_SONNET = "claude-sonnet-4-5-20250929";
-const MODEL_HAIKU = "claude-3-haiku-20240307";
+// ✅ CORRIGIDO: model IDs corretos
+const MODEL_SONNET = "claude-sonnet-4-5-20251001";
+const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 
-// Persistência simples em JSON
+// Persistência em JSON
 const DATA_DIR = path.join(__dirname, "data");
-const DB_PATH = path.join(DATA_DIR, "conversations.json");
+const DB_PATH  = path.join(DATA_DIR, "conversations.json");
+
+// Cache em memória para evitar leituras desnecessárias do disco
+let dbCache = null;
 
 function ensureDB() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ conversations: {} }, null, 2));
+    const empty = { conversations: {} };
+    fs.writeFileSync(DB_PATH, JSON.stringify(empty, null, 2));
+    dbCache = empty;
   }
 }
 
 function loadDB() {
   ensureDB();
-  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  if (dbCache) return dbCache;
+  dbCache = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+  return dbCache;
 }
 
+// ✅ CORRIGIDO: escrita atômica (evita corromper o arquivo se o servidor cair no meio)
 function saveDB(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  const tmp = DB_PATH + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, DB_PATH);
+  dbCache = db;
 }
 
 function uid() {
@@ -53,13 +63,10 @@ function pickTextFromAnthropic(data) {
   );
 }
 
-// Middleware de auth simples (opcional)
+// Middleware de autenticação
 app.use((req, res, next) => {
   if (!CHAT_PASSWORD) return next();
-
-  // libera arquivos estáticos (index.html etc.), mas bloqueia /api/*
   if (!req.path.startsWith("/api/")) return next();
-
   const token = req.headers["x-auth"];
   if (token === CHAT_PASSWORD) return next();
   return res.status(401).json({ error: "Não autorizado" });
@@ -69,14 +76,13 @@ app.use((req, res, next) => {
 async function maybeSummarizeConversation(conversationId) {
   if (!API_KEY) return;
 
-  const db = loadDB();
+  const db   = loadDB();
   const conv = db.conversations[conversationId];
   if (!conv) return;
 
   const msgs = conv.messages || [];
   if (msgs.length < 22) return;
 
-  // evita resumir toda hora
   const lastSum = conv.summaryUpdatedAt || 0;
   if (Date.now() - lastSum < 60_000) return;
 
@@ -97,14 +103,14 @@ async function maybeSummarizeConversation(conversationId) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "content-type": "application/json",
-      "x-api-key": API_KEY,
+      "content-type":      "application/json",
+      "x-api-key":         API_KEY,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: MODEL_HAIKU,
+      model:      MODEL_HAIKU,
       max_tokens: 600,
-      messages: [{ role: "user", content: prompt }],
+      messages:   [{ role: "user", content: prompt }],
     }),
   });
 
@@ -117,19 +123,20 @@ async function maybeSummarizeConversation(conversationId) {
   const summary = pickTextFromAnthropic(data).trim();
   if (!summary) return;
 
-  conv.summary = summary;
-  conv.summaryUpdatedAt = Date.now();
-  conv.messages = msgs.slice(-keepLast);
-  conv.updatedAt = Date.now();
+  conv.summary           = summary;
+  conv.summaryUpdatedAt  = Date.now();
+  conv.messages          = msgs.slice(-keepLast);
+  conv.updatedAt         = Date.now();
   saveDB(db);
 }
 
 // ---- APIs de conversas ----
+
 app.get("/api/conversations", (req, res) => {
-  const db = loadDB();
+  const db   = loadDB();
   const list = Object.entries(db.conversations).map(([id, c]) => ({
     id,
-    title: c.title || "Nova conversa",
+    title:     c.title || "Nova conversa",
     updatedAt: c.updatedAt || 0,
   }));
   list.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -140,12 +147,12 @@ app.post("/api/conversations", (req, res) => {
   const db = loadDB();
   const id = uid();
   db.conversations[id] = {
-    title: "Nova conversa",
-    summary: "",
+    title:            "Nova conversa",
+    summary:          "",
     summaryUpdatedAt: 0,
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    messages:         [],
+    createdAt:        Date.now(),
+    updatedAt:        Date.now(),
   };
   saveDB(db);
   res.json({ id });
@@ -153,70 +160,72 @@ app.post("/api/conversations", (req, res) => {
 
 app.get("/api/conversations/:id", (req, res) => {
   const db = loadDB();
-  const c = db.conversations[req.params.id];
+  const c  = db.conversations[req.params.id];
   if (!c) return res.status(404).json({ error: "Conversa não encontrada" });
   res.json({ id: req.params.id, ...c });
 });
 
 app.delete("/api/conversations/:id", (req, res) => {
   const db = loadDB();
-  if (!db.conversations[req.params.id]) return res.status(404).json({ error: "Conversa não encontrada" });
+  if (!db.conversations[req.params.id])
+    return res.status(404).json({ error: "Conversa não encontrada" });
   delete db.conversations[req.params.id];
   saveDB(db);
   res.json({ ok: true });
 });
 
-// ---- Chat streaming (SSE) + STOP + anexos (imagem/pdf/texto) ----
+// ---- Chat streaming (SSE) ----
+
 app.post("/api/chat/stream", async (req, res) => {
   try {
-    if (!API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY não definida." });
+    if (!API_KEY)
+      return res.status(500).json({ error: "ANTHROPIC_API_KEY não definida." });
 
     const { conversationId, message, model, attachments } = req.body || {};
     const userText = (message || "").trim();
 
-    if (!conversationId) return res.status(400).json({ error: "conversationId obrigatório." });
+    if (!conversationId)
+      return res.status(400).json({ error: "conversationId obrigatório." });
 
     const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
-    if (!userText && !hasAttachments) {
+    if (!userText && !hasAttachments)
       return res.status(400).json({ error: "Mensagem vazia (sem texto/anexo)." });
-    }
 
-    const db = loadDB();
+    const db   = loadDB();
     const conv = db.conversations[conversationId];
-    if (!conv) return res.status(404).json({ error: "Conversa não encontrada." });
+    if (!conv)
+      return res.status(404).json({ error: "Conversa não encontrada." });
 
-    // salva msg do user como texto (não salvamos base64 no histórico)
     conv.messages.push({
-      role: "user",
+      role:    "user",
       content: userText || "[Anexo enviado]",
-      ts: Date.now(),
+      ts:      Date.now(),
     });
     conv.updatedAt = Date.now();
-    if (!conv.title || conv.title === "Nova conversa") conv.title = (userText || "Nova conversa").slice(0, 48);
+    if (!conv.title || conv.title === "Nova conversa")
+      conv.title = (userText || "Nova conversa").slice(0, 48);
     saveDB(db);
 
-    // resumo automático pra economizar tokens
     await maybeSummarizeConversation(conversationId);
 
-    const db2 = loadDB();
+    const db2   = loadDB();
     const conv2 = db2.conversations[conversationId];
 
     const system = conv2.summary
       ? `Contexto resumido desta conversa (use como memória):\n${conv2.summary}`
       : "";
 
-    // histórico enviado (últimas N mensagens)
-    const MAX_TURNS = 16;
-    const history = (conv2.messages || []).slice(-MAX_TURNS).map((m) => ({
-      role: m.role,
+    // ✅ CORRIGIDO: histórico maior (últimas 20 mensagens)
+    const MAX_TURNS = 20;
+    const history   = (conv2.messages || []).slice(-MAX_TURNS).map((m) => ({
+      role:    m.role,
       content: m.content,
     }));
 
-    // Última mensagem do usuário vira content blocks (multimodal)
+    // Monta blocos multimodal para a última mensagem
     const blocks = [];
     if (userText) blocks.push({ type: "text", text: userText });
 
-    // attachments = [{kind:"image"|"pdf"|"text", media_type?, data?, text?, name}]
     if (Array.isArray(attachments)) {
       for (const a of attachments) {
         if (!a || !a.kind) continue;
@@ -224,43 +233,38 @@ app.post("/api/chat/stream", async (req, res) => {
         if (a.kind === "image") {
           if (!a.data || !a.media_type) continue;
           blocks.push({
-            type: "image",
+            type:   "image",
             source: { type: "base64", media_type: a.media_type, data: a.data },
           });
         } else if (a.kind === "pdf") {
           if (!a.data) continue;
           blocks.push({
-            type: "document",
+            type:   "document",
             source: { type: "base64", media_type: "application/pdf", data: a.data },
           });
         } else if (a.kind === "text") {
           if (!a.text) continue;
           const name = a.name || "arquivo";
-          // manda como texto dentro da mensagem
           blocks.push({
             type: "text",
-            text:
-              `\n\n---\nARQUIVO: ${name}\n` +
-              `Conteúdo (texto):\n` +
-              `${a.text}\n---\n`,
+            text: `\n\n---\nARQUIVO: ${name}\nConteúdo:\n${a.text}\n---\n`,
           });
         }
       }
     }
 
     history.push({
-      role: "user",
+      role:    "user",
       content: blocks.length ? blocks : userText,
     });
 
-    // prepara SSE
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    // Prepara SSE
+    res.setHeader("Content-Type",  "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Connection",    "keep-alive");
 
     const chosenModel = (model || MODEL_SONNET).trim();
 
-    // STOP: aborta quando cliente fecha/para
     const controller = new AbortController();
     req.on("close", () => controller.abort());
 
@@ -268,30 +272,32 @@ app.post("/api/chat/stream", async (req, res) => {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json",
-        "x-api-key": API_KEY,
+        "content-type":      "application/json",
+        "x-api-key":         API_KEY,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: chosenModel,
-        max_tokens: 900,
-        stream: true,
-        system: system || undefined,
-        messages: history,
+        model:      chosenModel,
+        max_tokens: 8096, // ✅ CORRIGIDO: era 900, agora respostas longas funcionam
+        stream:     true,
+        system:     system || undefined,
+        messages:   history,
       }),
     });
 
     if (!r.ok) {
       const errText = await r.text();
-      res.write(`event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`);
+      res.write(
+        `event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`
+      );
       return res.end();
     }
 
     let assistantText = "";
 
-    const reader = r.body.getReader();
+    const reader  = r.body.getReader();
     const decoder = new TextDecoder("utf-8");
-    let buffer = "";
+    let buffer    = "";
 
     while (true) {
       const { value, done } = await reader.read();
@@ -310,11 +316,7 @@ app.post("/api/chat/stream", async (req, res) => {
           if (jsonStr === "[DONE]") continue;
 
           let evt;
-          try {
-            evt = JSON.parse(jsonStr);
-          } catch {
-            continue;
-          }
+          try { evt = JSON.parse(jsonStr); } catch { continue; }
 
           const deltaText = evt?.delta?.text;
           if (typeof deltaText === "string" && deltaText.length) {
@@ -329,8 +331,8 @@ app.post("/api/chat/stream", async (req, res) => {
       }
     }
 
-    // salva resposta do assistant
-    const db3 = loadDB();
+    // Salva resposta do assistant
+    const db3   = loadDB();
     const conv3 = db3.conversations[conversationId];
     if (conv3) {
       conv3.messages.push({ role: "assistant", content: assistantText, ts: Date.now() });
