@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Meu Claude Chat</title>
+
+  <!-- Markdown + sanitização -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <style>
+    :root{--bg:#0b0f19;--panel:#0f172a;--muted:#94a3b8;--text:#e5e7eb;--line:#1f2937;--btn:#2563eb;--danger:#ef4444;}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    .app{display:grid;grid-template-columns:320px 1fr;height:100vh}
+    .sidebar{border-right:1px solid var(--line);padding:14px;background:var(--panel);display:flex;flex-direction:column;gap:12px}
+    .topbar{display:flex;gap:10px;align-items:center}
+    .btn{background:var(--btn);color:white;border:0;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:800}
+    .btn.secondary{background:#111827;border:1px solid var(--line)}
+    .btn.danger{background:transparent;border:1px solid rgba(239,68,68,.5);color:#fecaca}
+    .list{overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:6px}
+    .conv{background:rgba(17,24,39,.7);border:1px solid var(--line);border-radius:12px;padding:10px;cursor:pointer}
+    .conv.active{outline:2px solid rgba(37,99,235,.7)}
+    .conv .t{font-weight:900}
+    .conv .s{color:var(--muted);font-size:12px;margin-top:4px}
+    .main{display:flex;flex-direction:column}
+    .header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,.6)}
+    .model{background:#0b1220;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:10px}
+    .chat{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+    .msg{max-width:980px;width:100%;margin:0 auto;border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(17,24,39,.6)}
+    .msg.user{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.25)}
+    .role{color:var(--muted);font-size:12px;margin-bottom:6px}
+    .bubble{line-height:1.55}
+    .bubble pre{background:#0b1220;border:1px solid var(--line);padding:12px;border-radius:12px;overflow:auto}
+    .bubble code{background:#0b1220;border:1px solid rgba(31,41,55,.8);padding:2px 6px;border-radius:8px}
+    .bubble ul,.bubble ol{margin:10px 0 10px 20px}
+    .bubble h1,.bubble h2,.bubble h3{margin:12px 0 6px}
+    .composer{border-top:1px solid var(--line);padding:14px 18px;background:rgba(15,23,42,.6)}
+    .row{max-width:980px;margin:0 auto;display:flex;gap:10px;align-items:stretch}
+    textarea{flex:1;resize:none;min-height:52px;max-height:160px;padding:12px;border-radius:14px;border:1px solid var(--line);background:#0b1220;color:var(--text);outline:none}
+    .hint{max-width:980px;margin:8px auto 0;color:var(--muted);font-size:12px;white-space:pre-wrap}
+    .hint.danger{color:#fecaca}
+    .rightBtns{display:flex;flex-direction:column;gap:10px;min-width:120px}
+    .pill{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+    .dot{width:8px;height:8px;border-radius:99px;background:#22c55e;display:inline-block}
+    .dot.busy{background:#f59e0b}
+    .attRow{max-width:980px;margin:10px auto 0;display:flex;gap:8px;flex-wrap:wrap}
+    .att{border:1px solid var(--line);background:#0b1220;border-radius:999px;padding:6px 10px;font-size:12px;color:var(--text);display:flex;gap:8px;align-items:center}
+    .att button{border:0;background:transparent;color:#fecaca;cursor:pointer;font-weight:900}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="topbar">
+      <button class="btn" id="newBtn">+ Nova conversa</button>
+      <button class="btn secondary" id="delBtn">Apagar</button>
+    </div>
+
+    <div class="pill"><span class="dot" id="statusDot"></span><span id="statusTxt">Pronto</span></div>
+
+    <div class="list" id="convList"></div>
+
+    <div style="color:var(--muted);font-size:12px;line-height:1.4">
+      Dica: você paga por tokens enviados + recebidos. O servidor resume histórico automaticamente pra reduzir custo.
+      <br><br>
+      Você pode colar print com <b>Ctrl+V</b> ou anexar imagem/PDF/arquivos de texto.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header">
+      <div style="font-weight:900">Meu Claude Chat</div>
+      <select class="model" id="modelSel">
+        <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
+        <option value="claude-3-haiku-20240307">Haiku 3 (mais barato)</option>
+      </select>
+    </div>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="composer">
+      <div class="row">
+        <textarea id="input" placeholder="Digite sua mensagem... (Enter envia, Shift+Enter quebra linha)"></textarea>
+
+        <div class="rightBtns">
+          <input
+            id="fileInput"
+            type="file"
+            multiple
+            accept="image/*,application/pdf,.txt,.py,.js,.json,.md,.csv,.env,.html"
+            style="display:none"
+          >
+          <button class="btn secondary" id="attachBtn">Anexar</button>
+          <button class="btn" id="sendBtn">Enviar</button>
+          <button class="btn danger" id="stopBtn" disabled>Parar</button>
+        </div>
+      </div>
+
+      <div class="attRow" id="attRow" style="display:none"></div>
+      <div class="hint" id="hint"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const API = location.origin;
+
+  const convList = document.getElementById("convList");
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("sendBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const newBtn = document.getElementById("newBtn");
+  const delBtn = document.getElementById("delBtn");
+  const modelSel = document.getElementById("modelSel");
+  const hint = document.getElementById("hint");
+  const statusDot = document.getElementById("statusDot");
+  const statusTxt = document.getElementById("statusTxt");
+
+  const fileInput = document.getElementById("fileInput");
+  const attachBtn = document.getElementById("attachBtn");
+  const attRow = document.getElementById("attRow");
+
+  let currentId = null;
+  let streaming = false;
+  let controller = null;
+  let stickToBottom = true;
+
+  // anexos pendentes
+  let pendingAttachments = []; // [{kind, media_type?, data?, text?, name}]
+
+  marked.setOptions({ breaks: true });
+
+  function setStatus(busy, text){
+    statusDot.className = "dot" + (busy ? " busy" : "");
+    statusTxt.textContent = text || (busy ? "Gerando..." : "Pronto");
+  }
+
+  function nearBottom(){
+    const threshold = 140;
+    return (chat.scrollHeight - (chat.scrollTop + chat.clientHeight)) < threshold;
+  }
+
+  chat.addEventListener("scroll", () => {
+    stickToBottom = nearBottom();
+  });
+
+  function el(tag, cls){
+    const d = document.createElement(tag);
+    if(cls) d.className = cls;
+    return d;
+  }
+
+  function renderMarkdown(md){
+    const html = marked.parse(md || "");
+    return DOMPurify.sanitize(html);
+  }
+
+  function addMsg(role, text){
+    const box = el("div", "msg " + (role==="user" ? "user" : "assistant"));
+    const roleDiv = el("div", "role");
+    roleDiv.textContent = role==="user" ? "Você" : "Claude";
+    box.appendChild(roleDiv);
+
+    const bubble = el("div", "bubble");
+    bubble.innerHTML = renderMarkdown(text || "");
+    box.appendChild(bubble);
+
+    chat.appendChild(box);
+    if(stickToBottom) chat.scrollTop = chat.scrollHeight;
+    return bubble;
+  }
+
+  async function apiFetch(url, opts={}){
+    // senha (se ativou no server)
+    const pass = localStorage.getItem("CHAT_PASSWORD") || "";
+    opts.headers = opts.headers || {};
+    if(pass) opts.headers["X-Auth"] = pass;
+    return fetch(url, opts);
+  }
+
+  async function loadConversations(){
+    const r = await apiFetch(API + "/api/conversations");
+    if(r.status === 401){
+      const p = prompt("Digite a senha do chat (CHAT_PASSWORD):");
+      if(p) localStorage.setItem("CHAT_PASSWORD", p);
+      return loadConversations();
+    }
+    const data = await r.json();
+    convList.innerHTML = "";
+    data.conversations.forEach(c => {
+      const item = el("div", "conv" + (c.id===currentId ? " active" : ""));
+      item.onclick = () => openConversation(c.id);
+      const t = el("div","t"); t.textContent = c.title; item.appendChild(t);
+      const s = el("div","s"); s.textContent = "Atualizado: " + new Date(c.updatedAt||Date.now()).toLocaleString(); item.appendChild(s);
+      convList.appendChild(item);
+    });
+  }
+
+  async function openConversation(id){
+    currentId = id;
+    await loadConversations();
+    const r = await apiFetch(API + "/api/conversations/" + id);
+    const c = await r.json();
+    chat.innerHTML = "";
+    (c.messages || []).forEach(m => addMsg(m.role, m.content));
+    hint.textContent = "";
+    if(stickToBottom) chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function newConversation(){
+    const r = await apiFetch(API + "/api/conversations", { method:"POST" });
+    const data = await r.json();
+    await openConversation(data.id);
+  }
+
+  async function deleteConversation(){
+    if(!currentId) return;
+    await apiFetch(API + "/api/conversations/" + currentId, { method:"DELETE" });
+    currentId = null;
+    chat.innerHTML = "";
+    await loadConversations();
+  }
+
+  // ---- Anexos ----
+  attachBtn.onclick = () => fileInput.click();
+
+  fileInput.addEventListener("change", async () => {
+    const files = Array.from(fileInput.files || []);
+    for (const f of files) {
+      const att = await fileToAttachment(f);
+      if (att) pendingAttachments.push(att);
+    }
+    fileInput.value = "";
+    renderAttachments();
+  });
+
+  // Ctrl+V cola print/imagem
+  window.addEventListener("paste", async (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    for (const it of items) {
+      if (it.type?.startsWith("image/")) {
+        const blob = it.getAsFile();
+        if (!blob) continue;
+        const file = new File([blob], `print-${Date.now()}.png`, { type: blob.type || "image/png" });
+        const att = await fileToAttachment(file);
+        if (att) pendingAttachments.push(att);
+      }
+    }
+    if (pendingAttachments.length) renderAttachments();
+  });
+
+  function renderAttachments(){
+    if (!pendingAttachments.length){
+      attRow.style.display = "none";
+      attRow.innerHTML = "";
+      return;
+    }
+    attRow.style.display = "flex";
+    attRow.innerHTML = "";
+
+    pendingAttachments.forEach((a, idx) => {
+      const chip = el("div", "att");
+      const label = a.name || (a.kind === "pdf" ? "PDF" : a.kind === "image" ? "Imagem" : "Arquivo");
+      chip.textContent = label;
+
+      const x = document.createElement("button");
+      x.textContent = "✕";
+      x.title = "Remover";
+      x.onclick = () => {
+        pendingAttachments.splice(idx, 1);
+        renderAttachments();
+      };
+
+      chip.appendChild(x);
+      attRow.appendChild(chip);
+    });
+  }
+
+  async function fileToAttachment(file) {
+    const maxMB = 5;
+    if (file.size > maxMB * 1024 * 1024) {
+      alert(`Arquivo muito grande (${(file.size/1024/1024).toFixed(1)}MB). Use até ${maxMB}MB.`);
+      return null;
+    }
+
+    const isPdf = file.type === "application/pdf";
+    const isImage = file.type.startsWith("image/");
+    const isText =
+      file.type.startsWith("text/") ||
+      file.name.endsWith(".py") ||
+      file.name.endsWith(".js") ||
+      file.name.endsWith(".json") ||
+      file.name.endsWith(".env") ||
+      file.name.endsWith(".md") ||
+      file.name.endsWith(".csv") ||
+      file.name.endsWith(".html") ||
+      file.name.endsWith(".txt");
+
+    if (isImage) {
+      const base64 = await readAsBase64(file);
+      return {
+        kind: "image",
+        media_type: file.type || "image/png",
+        data: base64,
+        name: file.name
+      };
+    }
+
+    if (isPdf) {
+      const base64 = await readAsBase64(file);
+      return {
+        kind: "pdf",
+        media_type: "application/pdf",
+        data: base64,
+        name: file.name
+      };
+    }
+
+    if (isText) {
+      const text = await file.text();
+      return {
+        kind: "text",
+        text,
+        name: file.name
+      };
+    }
+
+    alert("Tipo de arquivo não suportado.");
+    return null;
+  }
+
+  function readAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = String(r.result || "");
+        const comma = s.indexOf(",");
+        resolve(comma >= 0 ? s.slice(comma + 1) : s);
+      };
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  // ---- Enviar / Stop ----
+  async function send(){
+    if(streaming) return;
+
+    const text = input.value.trim();
+    if(!text && pendingAttachments.length === 0) return;
+
+    if(!currentId) await newConversation();
+
+    input.value = "";
+
+    // Mostra no chat (sem base64)
+    const summary =
+      pendingAttachments.length
+        ? `**Anexos:** ${pendingAttachments.map(a => a.name).join(", ")}\n\n${text || ""}`
+        : text;
+
+    addMsg("user", summary || "_[Enviando anexos...]_");
+
+    const assistantBubble = addMsg("assistant", "");
+    streaming = true;
+    stopBtn.disabled = false;
+    hint.textContent = "Gerando resposta...";
+    hint.className = "hint";
+    setStatus(true, "Gerando...");
+
+    controller = new AbortController();
+
+    const payload = {
+      conversationId: currentId,
+      message: text,
+      model: modelSel.value,
+      attachments: pendingAttachments
+    };
+
+    // limpa anexos após preparar envio
+    pendingAttachments = [];
+    renderAttachments();
+
+    const r = await apiFetch(API + "/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    if(!r.ok){
+      const err = await r.json().catch(()=>({}));
+      assistantBubble.innerHTML = renderMarkdown("**ERRO:** " + (err.error || "desconhecido"));
+      hint.textContent = err.details ? String(err.details) : "";
+      hint.className = "hint danger";
+      streaming = false;
+      stopBtn.disabled = true;
+      setStatus(false, "Pronto");
+      await loadConversations();
+      return;
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buf = "";
+    let accText = "";
+
+    try{
+      while(true){
+        const { value, done } = await reader.read();
+        if(done) break;
+
+        buf += decoder.decode(value, { stream:true });
+
+        const chunks = buf.split("\n\n");
+        buf = chunks.pop() || "";
+
+        for(const chunk of chunks){
+          const lines = chunk.split("\n").map(l=>l.trim()).filter(Boolean);
+          let event = "message";
+          let dataLine = null;
+
+          for(const l of lines){
+            if(l.startsWith("event:")) event = l.slice(6).trim();
+            if(l.startsWith("data:")) dataLine = l.slice(5).trim();
+          }
+          if(!dataLine) continue;
+
+          const data = JSON.parse(dataLine);
+
+          if(event === "token"){
+            accText += data.t;
+            assistantBubble.innerHTML = renderMarkdown(accText);
+            if(stickToBottom) chat.scrollTop = chat.scrollHeight;
+          }
+
+          if(event === "error"){
+            assistantBubble.innerHTML = renderMarkdown(accText + "\n\n**ERRO:** " + (data.error || ""));
+            hint.textContent = data.details || "";
+            hint.className = "hint danger";
+          }
+        }
+      }
+    } catch(e){
+      // Abort/Stop
+    }
+
+    streaming = false;
+    stopBtn.disabled = true;
+    controller = null;
+    hint.textContent = "";
+    setStatus(false, "Pronto");
+    await loadConversations();
+  }
+
+  function stop(){
+    if(controller) controller.abort();
+    stopBtn.disabled = true;
+    streaming = false;
+    setStatus(false, "Interrompido");
+    hint.textContent = "Geração interrompida.";
+    hint.className = "hint";
+  }
+
+  sendBtn.onclick = send;
+  stopBtn.onclick = stop;
+  newBtn.onclick = newConversation;
+  delBtn.onclick = deleteConversation;
+
+  input.addEventListener("keydown", (e) => {
+    if(e.key === "Enter" && !e.shiftKey){
+      e.preventDefault();
+      send();
+    }
+  });
+
+  (async () => {
+    stickToBottom = true;
+    await loadConversations();
+    await newConversation();
+  })();
+</script>
+</body>
+</html>
