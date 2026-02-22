@@ -1,0 +1,97 @@
+{
+  "conversations": {
+    "c_j1gcl5y8mlxcglbo": {
+      "title": "Nova conversa",
+      "messages": [],
+      "createdAt": 1771740352500,
+      "updatedAt": 1771740352500
+    },
+    "c_7j9rahncmlxd21qt": {
+      "title": "Nova conversa",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [],
+      "createdAt": 1771741353557,
+      "updatedAt": 1771741353557
+    },
+    "c_qceanm85mlxdg4nu": {
+      "title": "Nova conversa",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [
+        {
+          "role": "user",
+          "content": "[Anexo enviado]",
+          "ts": 1771742019147
+        },
+        {
+          "role": "assistant",
+          "content": "Vejo que você compartilhou uma captura de tela da interface do Claude Chat em português. A imagem mostra:\n\n## Elementos visíveis:\n\n1. **Barra superior** com botões:\n   - \"+ Nova conversa\" (em azul)\n   - \"Apagar\"\n   - \"Meu Claude Chat\" (título)\n\n2. **Indicador de status**: \"Pronto\" (em verde)\n\n3. **Lista de conversas** com três entradas:\n   - Nova conversa - Atualizado: 22/02/2026, 03:33:30 (selecionada/destacada)\n   - Nova conversa - Atualizado: 22/02/2026, 03:22:33\n   - Nova conversa - Atualizado: 22/02/2026, 03:05:52\n\n4. **Dicas na parte inferior**:\n   - Informação sobre pagamento por tokens\n   - Menção ao histórico automático para reduzir custos\n   - Instrução sobre colar prints com **Ctrl+V** ou anexar imagem/PDF\n\n## Posso ajudar você com algo específico?\n\nTem alguma dúvida sobre como usar o Claude Chat, ou gostaria de iniciar uma conversa sobre algum assunto?",
+          "ts": 1771742028119
+        }
+      ],
+      "createdAt": 1771742010522,
+      "updatedAt": 1771742028119
+    },
+    "c_3jkj796emlxeaarq": {
+      "title": "oi",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [
+        {
+          "role": "user",
+          "content": "oi",
+          "ts": 1771743431489
+        }
+      ],
+      "createdAt": 1771743418118,
+      "updatedAt": 1771743431489
+    },
+    "c_044lu9wdmlxedfv9": {
+      "title": "teste",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [
+        {
+          "role": "user",
+          "content": "teste",
+          "ts": 1771743567945
+        },
+        {
+          "role": "assistant",
+          "content": "# teste\n\nteste\n\nOlá! Parece que você está fazendo um teste. Como posso ajudá-lo hoje? 😊\n\nSe quiser testar alguma funcionalidade específica ou tiver alguma dúvida, fique à vontade para perguntar!",
+          "ts": 1771743570658
+        }
+      ],
+      "createdAt": 1771743564693,
+      "updatedAt": 1771743570658
+    },
+    "c_iteof7fmmlxegjpa": {
+      "title": "teste",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [
+        {
+          "role": "user",
+          "content": "teste",
+          "ts": 1771743716091
+        },
+        {
+          "role": "assistant",
+          "content": "# teste\n\nOlá! 👋\n\nVejo que você escreveu \"teste\". Como posso ajudá-lo hoje? Estou aqui para:\n\n- Responder perguntas\n- Ajudar com informações\n- Conversar sobre diversos assuntos\n- Auxiliar em tarefas\n\nFique à vontade para me perguntar qualquer coisa!",
+          "ts": 1771743718748
+        }
+      ],
+      "createdAt": 1771743709630,
+      "updatedAt": 1771743718748
+    },
+    "c_lw2lxntsmlxeh3fp": {
+      "title": "Nova conversa",
+      "summary": "",
+      "summaryUpdatedAt": 0,
+      "messages": [],
+      "createdAt": 1771743735205,
+      "updatedAt": 1771743735205
+    }
+  }
+}
