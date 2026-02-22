@@ -316,11 +316,12 @@ app.post("/api/chat/stream", async (req, res) => {
       }),
     });
 
-    if (!r.ok) {
-      const errText = await r.text();
-      res.write(`event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`);
-      return res.end();
-    }
+   if (!r.ok) {
+  const errText = await r.text();
+  console.log("ERRO ANTHROPIC DETALHADO:", errText);
+  res.write(`event: error\ndata: ${JSON.stringify({ error: "Erro Anthropic", details: errText })}\n\n`);
+  return res.end();
+}
 
     let assistantText = "";
     const reader  = r.body.getReader();
