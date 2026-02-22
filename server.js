@@ -24,8 +24,8 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-const MODEL_SONNET = "claude-sonnet-4-5-20251001";
-const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
+const MODEL_SONNET = "claude-sonnet-4-5";
+const MODEL_HAIKU  = "claude-haiku-4-5";   
 
 function uid() {
   return "c_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
